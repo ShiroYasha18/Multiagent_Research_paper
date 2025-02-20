@@ -1,0 +1,7 @@
+# agents/__init__.py
+from .data_analysis_agent import DataAnalysisAgent
+from .experimental_design_agent import ExperimentDesignAgent
+from .hypothesis_generation_agent import HypothesisGenerationAgent
+from .literature_review_agent import LiteratureReviewAgent
+from .critic_agent import CriticAgent
+from .research_writer import ResearchWriter
