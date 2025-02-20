@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType, ModelType
-from camel.configs import  Gemini_API_PARAMS, GeminiConfig
+from camel.configs import  GroqConfig, GeminiConfig
 from agents import (
     DataAnalysisAgent,
     ExperimentDesignAgent,
@@ -14,13 +14,13 @@ from agents import (
 from tools.pdf_generator import generate_pdf
 
 load_dotenv()
-google = os.getenv("GOOGLE_API_KEY")
+google = os.getenv("GROQ_API_KEY")
 if not google:
     raise EnvironmentError("GOOGLE_API_KEY not found. Please check your .env file.")
 
 model = ModelFactory.create(
-    model_platform=ModelPlatformType.GEMINI,
-    model_type=ModelType.GEMINI_1_5_FLASH ,
+    model_platform=ModelPlatformType.GROQ,
+    model_type=ModelType.GROQ_LLAMA_3_3_70B_PREVIEW ,
     api_key=google,
     model_config_dict=GeminiConfig(temperature=0.7).as_dict(),
 )
@@ -32,11 +32,11 @@ literature_review_agent = LiteratureReviewAgent(model)
 critic_agent = CriticAgent(model)
 research_writer = ResearchWriter(model)
 
-topic = "AI-powered test automation tools in software testing"
+topic = "CNN in landslide detection using machine learning"
 
 citations = []
 
-max_iterations = 5
+max_iterations = 1
 for iteration in range(1, max_iterations + 1):
     print(f"🔄 Iteration {iteration}...")
 
@@ -65,6 +65,7 @@ for iteration in range(1, max_iterations + 1):
     data_analysis = data_analysis_agent.compare_research_findings(topic)
     print(f"📊 Data Analysis Insights:\n{data_analysis}\n")
 
+    # ✅ Stop early if a validated research result is found
     if "validated" in data_analysis.lower():
         print("✅ Research Workflow Completed Successfully!")
         break
@@ -72,6 +73,7 @@ for iteration in range(1, max_iterations + 1):
 else:
     print("⚠️ Maximum iterations reached. Consider refining the topic.")
 
+# ✅ Generate Final Research Report
 research_summary = f"""
 🔹 **Literature Review:**  
 {review}  
@@ -96,8 +98,10 @@ research_summary = f"""
 4. **Future Research Directions:** Scaling AI-based automation to large, enterprise-grade software remains an open challenge.  
 """
 
+# ✅ Generate References Section
 reference_section = "\n📌 **References:**\n" + "\n".join(f"- {citation}" for citation in set(citations))
 
+# ✅ Save Final Research Paper as PDF
 generate_pdf(
     {"Final Research Paper": research_summary, "References": reference_section},
     "final_research_paper.pdf",
