@@ -1,31 +1,34 @@
+import os
 import requests
-import datetime
+from dotenv import load_dotenv
 from camel.agents import ChatAgent
 from camel.messages import BaseMessage
 from camel.types import RoleType
 from tools.memory_module import create_memory_module
+from datetime import datetime
+
+load_dotenv()
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 
 class LiteratureReviewAgent:
     def __init__(self, model):
         self.agent = ChatAgent(
             system_message=(
-                "You are a research assistant specializing in academic literature reviews. "
-                "Your task is to extract key findings, identify research gaps, and summarize insights "
-                "STRICTLY from the provided research papers. "
-                "DO NOT generate information beyond the provided sources. "
-                "Always ensure APA-style citations for every referenced work."
+                "You are an advanced research assistant specializing in academic literature reviews. "
+                "Your task is to retrieve, summarize, and critically analyze research papers STRICTLY based on provided sources. "
+                "Ensure citations are in APA format. DO NOT generate any information beyond the provided sources."
             ),
             model=model,
             memory=create_memory_module(),
         )
 
-    def fetch_research_papers(self, query, max_results=10):
+    def fetch_arxiv_papers(self, query, max_results=10):
         """Fetches recent (last 10 years) research papers from ArXiv."""
         base_url = "http://export.arxiv.org/api/query"
-        current_year = datetime.datetime.now().year
+        current_year = datetime.now().year
         min_year = current_year - 10
         params = {
-            "search_query": f"all:{query} AND submittedDate:[{min_year}0000 TO {current_year}9999]",
+            "search_query": f"all:{query} AND submittedDate:[{min_year} TO {current_year}]",
             "start": 0,
             "max_results": max_results,
             "sortBy": "relevance",
@@ -40,33 +43,74 @@ class LiteratureReviewAgent:
                 title = entry.split("<title>")[1].split("</title>")[0].strip()
                 summary = entry.split("<summary>")[1].split("</summary>")[0].strip()
                 link = entry.split("<id>")[1].split("</id>")[0].strip()
-                papers.append(f"**{title}**\nSummary: {summary}\nSource: {link}")
+                papers.append({"title": title, "summary": summary, "link": link})
 
-        return papers if papers else ["No relevant research papers found."]
+        return papers if papers else []
+
+    def fetch_google_scholar_papers(self, query, max_results=5):
+        """Fetches research papers from Google Scholar using SerpAPI."""
+        if not SERPAPI_API_KEY:
+            print("❌ SERPAPI_API_KEY is missing. Please add it to your .env file.")
+            return []
+
+        url = "https://serpapi.com/search"
+        params = {
+            "q": query,
+            "engine": "google_scholar",
+            "api_key": SERPAPI_API_KEY,
+            "num": max_results
+        }
+        response = requests.get(url, params=params)
+        papers = []
+
+        if response.status_code == 200:
+            results = response.json().get("organic_results", [])
+            for result in results:
+                title = result.get("title", "No title available")
+                summary = result.get("snippet", "No summary available")
+                link = result.get("link", "No link available")
+                papers.append({"title": title, "summary": summary, "link": link})
+
+        return papers if papers else []
 
     def review_literature(self, topic):
-        """Fetch and analyze relevant research papers with improved focus on accuracy."""
-        research_papers = self.fetch_research_papers(topic)
+        """Fetch and analyze relevant research papers from ArXiv & Google Scholar."""
 
-        # Check if valid research papers were found
-        if len(research_papers) == 1 and "No relevant research papers found." in research_papers:
-            return "❌ No relevant research papers found in the last 10 years for this topic. Consider refining the query.", []
+        print(f"\n🔍 Searching for research papers on: **{topic}**\n")
 
-        research_text = "\n\n".join(research_papers[:10])  # Limit input size
+        arxiv_papers = self.fetch_arxiv_papers(topic)
+        scholar_papers = self.fetch_google_scholar_papers(topic)
+
+        all_papers = arxiv_papers + scholar_papers
+
+        if not all_papers:
+            return "❌ No relevant research papers found.", []
+
+        print(f"✅ Retrieved {len(all_papers)} papers:\n")
+        for paper in all_papers:
+            print(f"- {paper['title']} ({paper['link']})")
+
+        research_text = "\n\n".join(
+            [f"**{p['title']}**\nSummary: {p['summary']}\nSource: {p['link']}" for p in all_papers]
+        )
+
+        # ✅ Ensure research text isn't too long for LLM
+        max_tokens = 4000
+        if len(research_text) > max_tokens:
+            print("⚠️ Research text too long. Truncating...")
+            research_text = research_text[:max_tokens]
+
+        print("\n📝 Passing the following text to ChatAgent:\n")
+        print(research_text[:1000])  # ✅ Print first 1000 characters for debugging
 
         user_message = BaseMessage(
             role_name="User",
             role_type=RoleType.USER,
             meta_dict={},
             content=(
-                f"Review the following research papers on **{topic}**. "
-                "Your task is to summarize key findings, identify research gaps, and cite sources in APA format. "
-                "Ensure your response is STRICTLY based on the provided content. Do NOT fabricate citations.\n\n"
-                f"{research_text}\n\n"
-                "**Instructions:**\n"
-                "- Extract key findings without adding personal opinions.\n"
-                "- Clearly highlight at least 2-3 research gaps based on the findings.\n"
-                "- List all references properly in APA format.\n"
+                f"Summarize the findings of these research papers on **{topic}**. "
+                "Identify at least 2-3 key research gaps and list references in APA format.\n\n"
+                f"{research_text}"
             )
         )
 
@@ -74,4 +118,4 @@ class LiteratureReviewAgent:
         if not response.msgs:
             return "❌ AI failed to generate a summary. Try again.", []
 
-        return response.msgs[0].content, research_papers  # Return structured summary & references
+        return response.msgs[0].content, all_papers  # ✅ Return summary & references
