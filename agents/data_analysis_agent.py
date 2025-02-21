@@ -1,4 +1,6 @@
 import requests
+import re
+import numpy as np
 from camel.agents import ChatAgent
 from camel.messages import BaseMessage
 from camel.types import RoleType
@@ -10,15 +12,24 @@ class DataAnalysisAgent:
         self.agent = ChatAgent(
             system_message=(
                 "You are an AI research data analyst. "
-                "Your task is to compare numerical results from research papers, "
-                "detect inconsistencies, and highlight potential research gaps."
+                "Your role is to extract numerical results from research papers, "
+                "compare findings across multiple sources, detect inconsistencies, "
+                "and highlight potential research gaps. \n\n"
+                "**Guidelines:**\n"
+                "- Extract numerical data accurately from summaries.\n"
+                "- Identify inconsistencies using statistical methods (variance, standard deviation).\n"
+                "- Highlight gaps in methodology or data quality.\n"
+                "- Provide structured, well-formatted insights."
             ),
             model=model,
             memory=create_memory_module(),
         )
 
     def fetch_paper_results(self, query, max_results=5):
-        """Fetches numerical findings from research papers via ArXiv."""
+        """
+        Fetches research papers related to the given query and extracts numerical findings.
+        Uses ArXiv as the primary source.
+        """
         base_url = "http://export.arxiv.org/api/query"
         params = {
             "search_query": f"all:{query}",
@@ -38,37 +49,58 @@ class DataAnalysisAgent:
                 summary = entry.split("<summary>")[1].split("</summary>")[0].strip()
                 link = entry.split("<id>")[1].split("</id>")[0].strip()
 
-                # ✅ Extract numerical data from summary
-                numbers = [float(num) for num in summary.split() if num.replace('.', '', 1).isdigit()]
+                # ✅ Extract numerical values using regex
+                numbers = re.findall(r'\b\d+\.?\d*\b', summary)
+                numbers = [float(num) for num in numbers]
 
                 research_results.append({"title": title, "values": numbers, "link": link})
 
         return research_results  # ✅ Returns structured data
 
     def compare_research_findings(self, topic):
-        """Compare numerical results from different research papers to find inconsistencies."""
+        """
+        Compares numerical results from multiple research papers to identify inconsistencies.
+        Uses statistical analysis to detect research gaps.
+        """
         research_results = self.fetch_paper_results(topic)
 
         if not research_results or not isinstance(research_results, list):
             return "❌ No numerical data available for comparison."
 
-        # ✅ Filter only valid papers that contain numerical values
+        # ✅ Filter valid papers that contain numerical values
         valid_papers = [paper for paper in research_results if isinstance(paper, dict) and "values" in paper and paper["values"]]
 
         if len(valid_papers) < 2:
             return "❌ Not enough valid research papers for numerical comparison."
 
         # ✅ Generate comparison insights
-        comparison_text = "📊 **Research Comparison Across Papers:**\n"
+        comparison_text = "📊 **Research Findings Comparison:**\n"
+        all_values = []
+
         for paper in valid_papers:
-            comparison_text += f"- **{paper['title']}**: Values: {paper['values']} - [Link]({paper['link']})\n"
+            comparison_text += f"- **{paper['title']}**: Values: {paper['values']} - [📄 Source]({paper['link']})\n"
+            all_values.extend(paper["values"])
 
-        # ✅ Identify research gaps based on numerical inconsistencies
-        max_value = max(max(p["values"]) for p in valid_papers)
-        min_value = min(min(p["values"]) for p in valid_papers)
-        difference = max_value - min_value
+        # ✅ Perform statistical analysis
+        mean_value = np.mean(all_values)
+        std_dev = np.std(all_values)
+        variance = np.var(all_values)
 
-        if difference > 10:  # ✅ Threshold for inconsistency detection
-            comparison_text += f"\n❗ **Potential Research Gap Identified:** The reported results range from {min_value} to {max_value}, suggesting inconsistency in findings.\n"
+        comparison_text += f"\n📈 **Statistical Insights:**\n"
+        comparison_text += f"- **Mean Reported Value:** {round(mean_value, 2)}\n"
+        comparison_text += f"- **Standard Deviation:** {round(std_dev, 2)} (Lower means higher agreement)\n"
+        comparison_text += f"- **Variance:** {round(variance, 2)} (Higher suggests inconsistency)\n"
+
+        # ✅ Identify Research Gaps Based on Variability
+        if std_dev > 10:  # ✅ Threshold for inconsistency detection
+            comparison_text += "\n❗ **Potential Research Gaps Identified:**\n"
+
+            # Methodology Gap: High variance suggests methodological differences
+            if variance > 100:
+                comparison_text += "- **Methodological Discrepancies:** Differences in experimental setup, dataset variations, or feature selection may be causing inconsistent results.\n"
+
+            # Data Gap: Extreme outliers suggest possible data quality issues
+            if max(all_values) / mean_value > 3:
+                comparison_text += "- **Data Quality Concerns:** Some results deviate significantly, suggesting dataset biases or noise in specific studies.\n"
 
         return comparison_text

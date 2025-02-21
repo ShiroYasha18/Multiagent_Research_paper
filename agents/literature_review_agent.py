@@ -7,6 +7,7 @@ from camel.types import RoleType
 from tools.memory_module import create_memory_module
 from datetime import datetime
 
+# ✅ Load API Keys
 load_dotenv()
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 
@@ -16,7 +17,7 @@ class LiteratureReviewAgent:
             system_message=(
                 "You are an advanced research assistant specializing in academic literature reviews. "
                 "Your task is to retrieve, summarize, and critically analyze research papers STRICTLY based on provided sources. "
-                "Ensure citations are in APA format. DO NOT generate any information beyond the provided sources."
+                "Ensure citations are in APA format. DO NOT generate any information beyond the given sources."
             ),
             model=model,
             memory=create_memory_module(),
@@ -24,6 +25,7 @@ class LiteratureReviewAgent:
 
     def fetch_arxiv_papers(self, query, max_results=10):
         """Fetches recent (last 10 years) research papers from ArXiv."""
+        print("🔍 Searching ArXiv for relevant research papers...")
         base_url = "http://export.arxiv.org/api/query"
         current_year = datetime.now().year
         min_year = current_year - 10
@@ -53,6 +55,7 @@ class LiteratureReviewAgent:
             print("❌ SERPAPI_API_KEY is missing. Please add it to your .env file.")
             return []
 
+        print("🔍 Searching Google Scholar for relevant research papers...")
         url = "https://serpapi.com/search"
         params = {
             "q": query,
@@ -84,7 +87,8 @@ class LiteratureReviewAgent:
         all_papers = arxiv_papers + scholar_papers
 
         if not all_papers:
-            return "❌ No relevant research papers found.", []
+            print("❌ No relevant research papers found. Research canceled.")
+            return "❌ No relevant research papers found.", [], []
 
         print(f"✅ Retrieved {len(all_papers)} papers:\n")
         for paper in all_papers:
@@ -109,13 +113,60 @@ class LiteratureReviewAgent:
             meta_dict={},
             content=(
                 f"Summarize the findings of these research papers on **{topic}**. "
-                "Identify at least 2-3 key research gaps and list references in APA format.\n\n"
+                "Strictly extract information from the given sources. "
+                "Identify at least **3 key research gaps** and explain them in detail with citations.\n\n"
+                "**Instructions:**\n"
+                "- List key takeaways from each paper.\n"
+                "- Clearly highlight at least 3 research gaps based on the findings.\n"
+                "- Ensure all references are properly cited in APA format.\n"
+                "- Do NOT generate extra details beyond the provided sources.\n\n"
                 f"{research_text}"
             )
         )
 
         response = self.agent.step(user_message)
         if not response.msgs:
-            return "❌ AI failed to generate a summary. Try again.", []
+            return "❌ AI failed to generate a summary. Try again.", [], []
 
-        return response.msgs[0].content, all_papers  # ✅ Return summary & references
+        # ✅ Parse AI response for research summary & gaps
+        response_text = response.msgs[0].content
+        summary, gaps = self.extract_gaps_from_summary(response_text)
+
+        # ✅ Attach research gap citations
+        research_summary = summary + "\n\n📌 **Cited Papers for Research Gaps:**\n"
+        for paper in all_papers:
+            research_summary += f"- {paper['title']} (Source: {paper['link']})\n"
+
+        return research_summary, all_papers, gaps  # ✅ Return summary, citations, and research gaps
+
+    def extract_gaps_from_summary(self, text):
+        """Extracts research gaps from the AI-generated summary."""
+        research_gaps = []
+        summary_sections = text.split("\n")
+
+        capture = False
+        gap_text = ""
+        summary = ""
+
+        for line in summary_sections:
+            if "Research Gap" in line:  # ✅ Identifying research gaps
+                capture = True
+                if gap_text:
+                    research_gaps.append(gap_text.strip())
+                    gap_text = line.strip()
+                else:
+                    gap_text = line.strip()
+            elif capture:
+                if line.strip() == "":
+                    research_gaps.append(gap_text.strip())
+                    gap_text = ""
+                    capture = False
+                else:
+                    gap_text += " " + line.strip()
+            else:
+                summary += line + "\n"
+
+        if gap_text:  # ✅ Catch last research gap if missed
+            research_gaps.append(gap_text.strip())
+
+        return summary, research_gaps

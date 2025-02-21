@@ -20,9 +20,9 @@ model = ModelFactory.create(
 literature_agent = LiteratureReviewAgent(model)
 
 # ✅ Run Literature Review
-topic = "landslide detection using machine learning"
+topic = " Handwritten Answers evaluation using Multimodal AI"
 print(f"\n🔍 Running Literature Review Test on: **{topic}**\n")
-summary, papers = literature_agent.review_literature(topic)
+summary, papers, gaps = literature_agent.review_literature(topic)
 
 # ✅ Print Results
 print("\n📚 **Generated Literature Review Summary:**")
