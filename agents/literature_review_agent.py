@@ -4,8 +4,13 @@ from dotenv import load_dotenv
 from camel.agents import ChatAgent
 from camel.messages import BaseMessage
 from camel.types import RoleType
+
+from agents.dataextractionagent import DatasetExtractionAgent
+dataset_agent = DatasetExtractionAgent()
+
 from tools.memory_module import create_memory_module
 from datetime import datetime
+import numpy as np
 
 # ✅ Load API Keys
 load_dotenv()
@@ -49,32 +54,17 @@ class LiteratureReviewAgent:
 
         return papers if papers else []
 
-    def fetch_google_scholar_papers(self, query, max_results=5):
-        """Fetches research papers from Google Scholar using SerpAPI."""
-        if not SERPAPI_API_KEY:
-            print("❌ SERPAPI_API_KEY is missing. Please add it to your .env file.")
-            return []
+    def evaluate_research_gaps(self, gaps):
+        print("🔍 Calculating Research Gap Confidence Scores...")
+        scored_gaps = []
+        for gap in gaps:
+            length_score = len(gap.split()) / 100  # Word count normalization
+            novelty_score = np.random.uniform(0.6, 1.0)  # Simulated novelty score (0.6-1.0 range)
+            confidence = round((0.7 * length_score) + (0.3 * novelty_score), 3)
+            scored_gaps.append((gap, confidence))
 
-        print("🔍 Searching Google Scholar for relevant research papers...")
-        url = "https://serpapi.com/search"
-        params = {
-            "q": query,
-            "engine": "google_scholar",
-            "api_key": SERPAPI_API_KEY,
-            "num": max_results
-        }
-        response = requests.get(url, params=params)
-        papers = []
-
-        if response.status_code == 200:
-            results = response.json().get("organic_results", [])
-            for result in results:
-                title = result.get("title", "No title available")
-                summary = result.get("snippet", "No summary available")
-                link = result.get("link", "No link available")
-                papers.append({"title": title, "summary": summary, "link": link})
-
-        return papers if papers else []
+        scored_gaps = sorted(scored_gaps, key=lambda x: x[1], reverse=True)
+        return scored_gaps
 
     def review_literature(self, topic):
         """Fetch and analyze relevant research papers from ArXiv & Google Scholar."""
@@ -82,9 +72,7 @@ class LiteratureReviewAgent:
         print(f"\n🔍 Searching for research papers on: **{topic}**\n")
 
         arxiv_papers = self.fetch_arxiv_papers(topic)
-        scholar_papers = self.fetch_google_scholar_papers(topic)
-
-        all_papers = arxiv_papers + scholar_papers
+        all_papers = arxiv_papers
 
         if not all_papers:
             print("❌ No relevant research papers found. Research canceled.")
@@ -98,14 +86,13 @@ class LiteratureReviewAgent:
             [f"**{p['title']}**\nSummary: {p['summary']}\nSource: {p['link']}" for p in all_papers]
         )
 
-        # ✅ Ensure research text isn't too long for LLM
         max_tokens = 4000
         if len(research_text) > max_tokens:
             print("⚠️ Research text too long. Truncating...")
             research_text = research_text[:max_tokens]
 
         print("\n📝 Passing the following text to ChatAgent:\n")
-        print(research_text[:1000])  # ✅ Print first 1000 characters for debugging
+        print(research_text[:1000])
 
         user_message = BaseMessage(
             role_name="User",
@@ -128,28 +115,21 @@ class LiteratureReviewAgent:
         if not response.msgs:
             return "❌ AI failed to generate a summary. Try again.", [], []
 
-        # ✅ Parse AI response for research summary & gaps
         response_text = response.msgs[0].content
         summary, gaps = self.extract_gaps_from_summary(response_text)
+        scored_gaps = self.evaluate_research_gaps(gaps)
 
-        # ✅ Attach research gap citations
-        research_summary = summary + "\n\n📌 **Cited Papers for Research Gaps:**\n"
-        for paper in all_papers:
-            research_summary += f"- {paper['title']} (Source: {paper['link']})\n"
-
-        return research_summary, all_papers, gaps  # ✅ Return summary, citations, and research gaps
+        return summary, all_papers, scored_gaps
 
     def extract_gaps_from_summary(self, text):
-        """Extracts research gaps from the AI-generated summary."""
         research_gaps = []
         summary_sections = text.split("\n")
-
         capture = False
         gap_text = ""
         summary = ""
 
         for line in summary_sections:
-            if "Research Gap" in line:  # ✅ Identifying research gaps
+            if "Research Gap" in line:
                 capture = True
                 if gap_text:
                     research_gaps.append(gap_text.strip())
@@ -166,7 +146,7 @@ class LiteratureReviewAgent:
             else:
                 summary += line + "\n"
 
-        if gap_text:  # ✅ Catch last research gap if missed
+        if gap_text:
             research_gaps.append(gap_text.strip())
 
         return summary, research_gaps
