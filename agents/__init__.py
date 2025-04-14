@@ -5,3 +5,4 @@ from .hypothesis_generation_agent import HypothesisGenerationAgent
 from .literature_review_agent import LiteratureReviewAgent
 from .critic_agent import CriticAgent
 from .research_writer import ResearchWriter
+from .dataextractionagent import DatasetExtractionAgent
