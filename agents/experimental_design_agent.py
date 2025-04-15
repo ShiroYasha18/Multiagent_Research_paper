@@ -7,44 +7,49 @@ from tools.memory_module import create_memory_module
 
 class ExperimentDesignAgent:
     def __init__(self, model):
+        """Initialize the ExperimentDesignAgent with a language model."""
         self.agent = ChatAgent(
             system_message=(
-                "You are a top-tier scientific research expert specializing in designing practical and "
-                "well-structured experiments to rigorously validate hypotheses. "
-                "Your goal is to create an experiment that meets **real-world feasibility criteria** "
-                "while maintaining strong scientific rigor.\n\n"
-                "**Ensure the experiment includes:**\n"
-                "1️⃣ **Clear Methodology:** Step-by-step plan for conducting the experiment.\n"
-                "2️⃣ **Variables & Controls:** Define independent, dependent, and control variables.\n"
-                "3️⃣ **Data Collection & Metrics:** Specify evaluation methods and statistical validation.\n"
-                "4️⃣ **Feasibility & Justification:** Explain why this experiment is practical & achievable.\n"
-                "5️⃣ **Failure Scenarios & Adjustments:** Identify potential pitfalls and adaptations."
+                "You are an expert scientific researcher specializing in experimental design. "
+                "Your task is to create detailed, rigorous experimental protocols that can "
+                "effectively test hypotheses. Focus on creating experiments with clear "
+                "methodologies, well-defined variables, appropriate data collection methods, "
+                "and robust analysis approaches."
             ),
             model=model,
             memory=create_memory_module(),
         )
 
     def design_experiment(self, hypothesis):
-        """Generate a structured, **real-world applicable** experiment for the hypothesis."""
-        user_message = BaseMessage(
+        """Designs an experiment based on the hypothesis."""
+        prompt = f"""
+        Design a detailed experiment to test the following hypothesis:
+        
+        {hypothesis}
+        
+        Please include:
+        1. Methodology (detailed experimental setup)
+        2. Variables (independent, dependent, and control variables)
+        3. Data collection methods (instruments, measurements, frequency)
+        4. Analysis approach (statistical methods, data processing)
+        5. Expected outcomes (what results would support or refute the hypothesis)
+        6. Potential limitations and how to address them
+        
+        Format your response as a structured experimental protocol that could be implemented by researchers.
+        """
+        
+        message = BaseMessage(
             role_name="User",
             role_type=RoleType.USER,
             meta_dict={},
-            content=(
-                f"📌 **Hypothesis to Validate:**\n{hypothesis}\n\n"
-                "**🔬 Design an experiment that adheres to the following structure:**\n"
-                "1️⃣ **Step-by-Step Methodology:** Describe the exact steps required to conduct the experiment.\n"
-                "2️⃣ **Key Variables & Controls:** Define independent, dependent, and control variables.\n"
-                "3️⃣ **Data Collection & Validation:** Specify metrics, statistical techniques, and expected results.\n"
-                "4️⃣ **Real-World Feasibility:** Justify how this experiment can be executed with available resources.\n"
-                "5️⃣ **Failure Handling:** Outline potential obstacles and how they can be mitigated.\n\n"
-                "**STRICT RULE:** The experiment must be **highly relevant** to the given hypothesis and follow "
-                "a rigorous yet **practical** scientific methodology."
-            )
+            content=prompt
         )
-
-        response = self.agent.step(user_message)
-        if not response.msgs:
-            return "❌ AI failed to generate an experiment. Try again."
-
-        return response.msgs[0].content
+        
+        try:
+            response = self.agent.step(message)
+            if response and response.msgs and len(response.msgs) > 0:
+                return response.msgs[0].content
+            else:
+                return "Error: No response generated for experiment design."
+        except Exception as e:
+            return f"Error in experiment design generation: {str(e)}"

@@ -28,6 +28,22 @@ class PaperGenerator:
         self.add_section("4. Data Analysis", data_analysis)
         self.add_section("5. Conclusion", "Findings suggest further investigation is needed in this area.")
 
+        # Add XAI section
+        self.pdf.add_page()
+        self.pdf.set_font("Arial", "B", 14)
+        self.pdf.cell(0, 10, "Explainable AI Analysis", ln=True)
+        
+        # Add LIME explanations
+        self.pdf.set_font("Arial", "", 12)
+        self.pdf.cell(0, 10, "LIME Feature Importance Analysis:", ln=True)
+        self.pdf.image("xai_explanations.png", x=10, y=None, w=190)
+        
+        # Add SHAP analysis
+        self.pdf.add_page()
+        self.pdf.set_font("Arial", "B", 12)
+        self.pdf.cell(0, 10, "SHAP Value Analysis:", ln=True)
+        self.pdf.ln(10)
+
         # Save PDF
         file_name = f"{self.title.replace(' ', '_')}.pdf"
         self.pdf.output(file_name)

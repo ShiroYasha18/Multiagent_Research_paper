@@ -5,10 +5,7 @@ from camel.types import RoleType
 from tools.memory_module import create_memory_module
 from dotenv import load_dotenv
 
-# ✅ Load API Keys
 load_dotenv()
-mistral_api_key = os.getenv("MISTRAL_API_KEY")
-
 
 class ResearchWriter:
     def __init__(self, model):

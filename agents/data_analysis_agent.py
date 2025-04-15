@@ -13,22 +13,7 @@ from tools.memory_module import create_memory_module
 
 class DataAnalysisAgent:
     def __init__(self, model):
-        self.agent = ChatAgent(
-            system_message=(
-                "You are an AI research data analyst. "
-                "Your role is to extract numerical results from research papers, "
-                "compare findings across multiple sources, detect inconsistencies, "
-                "highlight potential research gaps using Explainable AI (XAI) techniques like SHAP and GradCAM, "
-                "and generate interactive SHAP dependence and interaction plots.\n\n"
-                "**Guidelines:**\n"
-                "- Extract numerical data accurately.\n"
-                "- Use variance and standard deviation to detect inconsistencies.\n"
-                "- Identify methodological gaps and data quality issues.\n"
-                "- Provide structured insights with visual explanations."
-            ),
-            model=model,
-            memory=create_memory_module(),
-        )
+        self.model = model
 
     def fetch_paper_results(self, query, max_results=5):
         base_url = "http://export.arxiv.org/api/query"
@@ -57,21 +42,6 @@ class DataAnalysisAgent:
 
         return papers
 
-    def apply_gradcam(self, model, image, layer_name):
-        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer(layer_name).output, model.output])
-        with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(image)
-            loss = predictions[:, 0]
-
-        grads = tape.gradient(loss, conv_outputs)
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-        conv_outputs = conv_outputs[0]
-        heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_outputs), axis=-1)
-        heatmap = np.maximum(heatmap, 0)
-        heatmap /= np.max(heatmap)
-        plt.matshow(heatmap)
-        plt.savefig("gradcam_explanation.png")
-
     def compare_findings(self, topic):
         papers = self.fetch_paper_results(topic)
         if len(papers) < 2:
@@ -96,7 +66,9 @@ class DataAnalysisAgent:
         model = lambda x: np.mean(x, axis=1)
         explainer = shap.Explainer(model, data)
         shap_values = explainer(data)
-        shap.summary_plot(shap_values, data)
+        shap.summary_plot(shap_values, data, show=False)
+        plt.savefig("/Users/ayrafraihan/Desktop/pythonProject11/shap_summary_plot.png")
+        plt.close()
 
         # GradCAM Visualization (Mock example)
         dummy_model = keras.Sequential([keras.layers.InputLayer(input_shape=(32, 32, 3)), keras.layers.Conv2D(32, (3, 3), activation="relu"), keras.layers.GlobalAveragePooling2D(), keras.layers.Dense(1, activation="sigmoid")])
@@ -106,3 +78,40 @@ class DataAnalysisAgent:
         result += "\n✅ SHAP and GradCAM explanations generated successfully with visualizations."
 
         return result
+
+    def apply_gradcam(self, model, image, layer_name):
+        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer(layer_name).output, model.output])
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = grad_model(image)
+            loss = predictions[:, 0]
+
+        grads = tape.gradient(loss, conv_outputs)
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        conv_outputs = conv_outputs[0]
+        heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_outputs), axis=-1)
+        heatmap = np.maximum(heatmap, 0)
+        heatmap /= np.max(heatmap)
+        plt.matshow(heatmap)
+        plt.savefig("/Users/ayrafraihan/Desktop/pythonProject11/gradcam_explanation.png")
+        plt.close()
+
+    def summarize_papers(self, topic):
+        papers = self.fetch_paper_results(topic)
+        if not papers:
+            return "No papers found for the given topic."
+        
+        summary = "📚 **Research Papers Summary**\n\n"
+        for i, paper in enumerate(papers, 1):
+            summary += f"{i}. **Title:** {paper['title']}\n"
+            summary += f"   **Key Numerical Findings:** {', '.join(map(str, paper['values']))}\n"
+            summary += f"   **Source:** {paper['link']}\n\n"
+        
+        # Add statistical overview
+        all_values = [num for paper in papers for num in paper['values']]
+        if all_values:
+            summary += "📊 **Statistical Overview**\n"
+            summary += f"- Total Papers: {len(papers)}\n"
+            summary += f"- Average Value: {round(np.mean(all_values), 2)}\n"
+            summary += f"- Range: {round(min(all_values), 2)} - {round(max(all_values), 2)}\n"
+        
+        return summary
